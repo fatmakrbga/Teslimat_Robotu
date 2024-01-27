@@ -1,4 +1,8 @@
 # Arduino_Tabanlı_Ürün_Teslimat_Robotu
+
+Makale ile ilgili tüm detaylar:
+https://dergipark.org.tr/tr/pub/bitlisfen/issue/81610/1347396
+
 Ülkemizde süregelen taşıma sorunlarına bir çözüm  olması niteliğinde taşıma robotu adlı çalışmaları sunmaktadır.  
 Ürünleri evlere teslim eden bir otonom teslimat robotudur.
 Küresel  Konumlandırma Sistemi (GPS) kullanarak paketleri istenen bir  yere güvenli bir şekilde teslim edebilen uygun maliyetli bir otonom  robot prototipinin tasarımı ve geliştirilmesidir. 
