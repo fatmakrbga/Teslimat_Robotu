@@ -1,188 +1,108 @@
-// Simple Bluetooth Controlled Car using App Inventor
-// by EZTech (Mark Conner)
-// Videos & Instructions can be found at - Youtube & Instructables 
-// Code for this and other projects @ GitHub https://github.com/mkconer/
-// Arduino Mega
-// HC-06 Slave 5v Bluetooth module
-// L293D Motor Shield - Be sure to Install the Adafruit Motor Shield Library
+#include <Wire.h>
+#include <Adafruit_Sensor.h>
+#include <Adafruit_HMC5883_U.h>
 
+#define ENA_PIN 10
+#define IN1_PIN 9
+#define IN2_PIN 8
+#define IN3_PIN 7
+#define IN4_PIN 6
+#define ENB_PIN 5
+#define MOTOR_SPEED 150
 
-#include <AFMotor.h>                                      // The Adafruit Motor Shield Library ver. 1
-                                                      
-//****************************************************************************************************
-// Setup Drive Motors using the Adafruit Motor Controller version 1.0 Library
+Adafruit_HMC5883_Unified compass;
 
-AF_DCMotor motor1(1, MOTOR12_64KHZ);                      // create motor #1, 64KHz pwm
-AF_DCMotor motor2(2, MOTOR12_64KHZ);                      // create motor #2, 64KHz pwm
-AF_DCMotor motor3(3, MOTOR12_64KHZ);                      // create motor #3, 64KHz pwm
-AF_DCMotor motor4(4, MOTOR12_64KHZ);                      // create motor #4, 64KHz pwm
+const float targetX = 1.5; // b noktasının X koordinatı
+const float targetY = 1.5; // b noktasının Y koordinatı
 
-int mtr_Spd = 250;                                        // set the speed of the motors
+void setup() {
+  pinMode(ENA_PIN, OUTPUT);
+  pinMode(IN1_PIN, OUTPUT);
+  pinMode(IN2_PIN, OUTPUT);
+  pinMode(IN3_PIN, OUTPUT);
+  pinMode(IN4_PIN, OUTPUT);
+  pinMode(ENB_PIN, OUTPUT);
 
-//*****************************************************************************************************
-// Bluetooth Variables & Setup
-
-String str;                                               // raw string received from android to arduino
-int blueToothVal;                                         // stores the last value sent over via bluetooth
-
-//*****************************************************************************************************
-
-void setup() 
-{  
-  Serial.begin(115200);                                  // Serial 0 is for communication with the serial monitor
-  Serial1.begin(9600);                                   // Serial 1 is for Bluetooth communication - DO NOT MODIFY  
+  Wire.begin();
+  compass.begin();
 }
 
-//*****************************************************************************************************
-// Main Loop
-
-void loop()
-{   
-  bluetooth();                                          // Run the Bluetooth procedure to see if there is any data being sent via BT
+void loop() {
+  goToPoint(targetX, targetY); // b noktasına git
+  delay(1000); // 1 saniye bekle
 }
 
+void goToPoint(float targetX, float targetY) {
+  float currentX = 0.0; // a noktasının X koordinatı
+  float currentY = 0.0; // a noktasının Y koordinatı
 
+  float deltaX = targetX - currentX;
+  float deltaY = targetY - currentY;
 
+  float targetAngle = atan2(deltaY, deltaX) * 180.0 / PI;
 
-//*****************************************************************************************************
-// This procedure reads the serial port - Serial1 - for bluetooth commands being sent from the Android device
-
-void bluetooth()
-{
- while (Serial1.available())                  // Read bluetooth commands over Serial1 // Warning: If an error with Serial1 occurs, make sure Arduino Mega 2560 is Selected
- {  
-  {  
-      str = Serial1.readStringUntil('\n');               // str is the temporary variable for storing the last sring sent over bluetooth from Android device
-      //Serial.print(str);             
-  } 
-    
-    blueToothVal = (str.toInt());                        //  convert the string 'str' into an integer and assign it to blueToothVal
-    Serial.print("BlueTooth Value ");
-    Serial.println(blueToothVal);    
-
-
-
-// Bluetooth Section
-// *********************************************************************************************************
-
- switch (blueToothVal) 
- {
-      case 1:                                
-        Serial1.println("Forward");
-        Forward();
-        break;
-
-      case 2:                 
-        Serial1.println("Reverse");
-        Reverse();
-        break;
-
-      case 3:         
-        Serial1.println("Left");
-        LeftTurn();
-        Stop();
-        break;
-        
-      case 4:                     
-        Serial1.println("Right");
-        RightTurn();
-        Stop();
-        break;
-        
-      case 5:                                            
-        Serial1.println("Stop");
-        Stop();
-        break;      
-
- }                                                              // end of switch case 
-
- }                                                              // end of while loop Serial1 read
- 
-                                                                // if no data from Bluetooth 
-   if (Serial1.available() < 0)                              
-    {
-     Serial1.println("No Bluetooth Data ");          
+  while (true) {
+    sensors_event_t event;
+    compass.getEvent(&event);
+    float currentHeading = (atan2(event.magnetic.y, event.magnetic.x) * 180.0) / PI;
+    if (currentHeading < 0) {
+      currentHeading += 360.0;
     }
-  
+
+    float deltaAngle = targetAngle - currentHeading;
+
+    if (deltaAngle < -180.0) {
+      deltaAngle += 360.0;
+    } else if (deltaAngle > 180.0) {
+      deltaAngle -= 360.0;
+    }
+
+    if (abs(deltaAngle) < 5.0) {
+      // Hedef yönüne doğru hareket et
+      digitalWrite(IN1_PIN, HIGH);
+      digitalWrite(IN2_PIN, LOW);
+      digitalWrite(IN3_PIN, HIGH);
+      digitalWrite(IN4_PIN, LOW);
+    } else {
+      // Yönü düzeltmek için sağa veya sola dön
+      if (deltaAngle > 0.0) {
+        // Sağa dön
+        digitalWrite(IN1_PIN, HIGH);
+        digitalWrite(IN2_PIN, LOW);
+        digitalWrite(IN3_PIN, LOW);
+        digitalWrite(IN4_PIN, HIGH);
+      } else {
+        // Sola dön
+        digitalWrite(IN1_PIN, LOW);
+        digitalWrite(IN2_PIN, HIGH);
+        digitalWrite(IN3_PIN, HIGH);
+        digitalWrite(IN4_PIN, LOW);
+      }
+    }
+
+    analogWrite(ENA_PIN, MOTOR_SPEED);
+    analogWrite(ENB_PIN, MOTOR_SPEED);
+
+    float distanceToTarget = sqrt(pow((targetX - currentX), 2) + pow((targetY - currentY), 2));
+    if (distanceToTarget < 0.1) {
+      // Hedef noktaya ulaşıldı, dur
+      stopMotors();
+      return;
+    }
+
+    // Konum güncellemesi
+    currentX += 0.1 * cos(currentHeading * PI / 180.0);
+    currentY += 0.1 * sin(currentHeading * PI / 180.0);
+
+    delay(100); // 100 milisaniye bekle
+  }
 }
 
-
-
-
-// Motor Control Section
-// **********************************************************************************************************************************************************************
-
-void Forward()
-{
-  Serial.println("Forward");
-  motor1.setSpeed(mtr_Spd);                                                   
-  motor2.setSpeed(mtr_Spd);     
-  motor3.setSpeed(mtr_Spd);     
-  motor4.setSpeed(mtr_Spd);                           
-  
-  motor1.run(FORWARD);                                                         
-  motor2.run(FORWARD);
-  motor3.run(FORWARD);
-  motor4.run(FORWARD);
-}
-
-// **********************************************************************************************************************************************************************
-
-
-void Reverse()
-{
-  Serial.println("Reverse");
-  motor1.setSpeed(mtr_Spd);                                                   
-  motor2.setSpeed(mtr_Spd);     
-  motor3.setSpeed(mtr_Spd);     
-  motor4.setSpeed(mtr_Spd);    
-  
-  motor1.run(BACKWARD);                                                        
-  motor2.run(BACKWARD);
-  motor3.run(BACKWARD);
-  motor4.run(BACKWARD);
-}
-
-// **********************************************************************************************************************************************************************
-
-void LeftTurn()
-{
-  Serial.println("Left");
-  motor1.setSpeed(mtr_Spd);                                                   
-  motor2.setSpeed(mtr_Spd);     
-  motor3.setSpeed(mtr_Spd);     
-  motor4.setSpeed(mtr_Spd);    
-  
-  motor1.run(BACKWARD);                                                        
-  motor2.run(FORWARD);
-  motor3.run(FORWARD);
-  motor4.run(BACKWARD);
-  delay(100);    
-}
-
-// **********************************************************************************************************************************************************************
-
-void RightTurn()
-{
-  Serial.println("Right");
-  motor1.setSpeed(mtr_Spd);                                                   
-  motor2.setSpeed(mtr_Spd);     
-  motor3.setSpeed(mtr_Spd);     
-  motor4.setSpeed(mtr_Spd);   
-
-  motor1.run(FORWARD);                                              
-  motor2.run(BACKWARD);
-  motor3.run(BACKWARD);
-  motor4.run(FORWARD);
-  delay(100);                                                                     
-}
-
-// **********************************************************************************************************************************************************************
-
-void Stop()
-{ 
-  motor1.run(RELEASE);                                                         
-  motor2.run(RELEASE);
-  motor3.run(RELEASE);
-  motor4.run(RELEASE);   
+void stopMotors() {
+  digitalWrite(IN1_PIN, LOW);
+  digitalWrite(IN2_PIN, LOW);
+  digitalWrite(IN3_PIN, LOW);
+  digitalWrite(IN4_PIN, LOW);
+  analogWrite(ENA_PIN, 0);
+  analogWrite(ENB_PIN, 0);
 }
